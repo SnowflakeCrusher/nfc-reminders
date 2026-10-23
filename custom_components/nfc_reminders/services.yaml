@@ -1,0 +1,6 @@
+mark_done:
+  target:
+    entity:
+      integration: nfc_reminders
+    device:
+      integration: nfc_reminders

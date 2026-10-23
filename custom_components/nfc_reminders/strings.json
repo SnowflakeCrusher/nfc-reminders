@@ -3,32 +3,50 @@
     "step": {
       "user": {
         "title": "Add NFC Reminder",
-        "description": "Create a new NFC-based reminder tracker",
+        "description": "Track a recurring task with one or more NFC tags.",
         "data": {
           "reminder_name": "Reminder Name",
-          "nfc_tag_id": "NFC Tag ID",
+          "nfc_tag_ids": "NFC Tag IDs",
           "interval": "Reminder Interval",
           "interval_unit": "Interval Unit"
+        },
+        "data_description": {
+          "nfc_tag_ids": "One or more tag IDs, separated by commas. Scanning any one of them marks the reminder done. To find a tag's ID, listen for the tag_scanned event in Settings > Tools > Events and scan it."
         }
       }
     },
     "error": {
-      "name_exists": "A reminder with this name already exists"
+      "name_exists": "A reminder with this name already exists",
+      "invalid_name": "The name needs at least one letter or number",
+      "no_tags": "Enter at least one NFC tag ID"
     },
     "abort": {
-      "already_configured": "This reminder is already configured"
+      "already_configured": "A reminder with this name already exists"
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Update Reminder Settings",
-        "description": "Modify the reminder interval",
+        "title": "Reminder Settings",
+        "description": "Change the tag IDs or the interval.",
         "data": {
+          "nfc_tag_ids": "NFC Tag IDs",
           "interval": "Reminder Interval",
           "interval_unit": "Interval Unit"
+        },
+        "data_description": {
+          "nfc_tag_ids": "One or more tag IDs, separated by commas. Scanning any one of them marks the reminder done."
         }
       }
+    },
+    "error": {
+      "no_tags": "Enter at least one NFC tag ID"
+    }
+  },
+  "services": {
+    "mark_done": {
+      "name": "Mark done",
+      "description": "Records a completion now, the same as scanning one of the reminder's tags."
     }
   }
 }

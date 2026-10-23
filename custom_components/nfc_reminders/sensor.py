@@ -1,23 +1,16 @@
-"""Sensor platform for NFC Reminders."""
-from datetime import datetime, timedelta
-import logging
+"""Sensors for NFC Reminders."""
+from __future__ import annotations
 
-from homeassistant.components.sensor import SensorEntity
+from datetime import datetime
+
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.const import UnitOfTime
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.util import dt as dt_util
 
-from .const import (
-    DOMAIN,
-    CONF_REMINDER_NAME,
-    CONF_NFC_TAG_ID,
-    CONF_INTERVAL,
-    CONF_INTERVAL_UNIT,
-)
-
-_LOGGER = logging.getLogger(__name__)
+from .common import NFCReminderEntity, ReminderData
+from .const import DOMAIN
 
 
 async def async_setup_entry(
@@ -25,185 +18,87 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up NFC Reminder sensors."""
-    reminder_name = config_entry.data[CONF_REMINDER_NAME]
-    safe_name = reminder_name.lower().replace(" ", "_")
-    
-    entities = [
-        NFCReminderLastScanSensor(hass, config_entry, safe_name, reminder_name),
-        NFCReminderDaysSinceSensor(hass, config_entry, safe_name, reminder_name),
-        NFCReminderProgressSensor(hass, config_entry, safe_name, reminder_name),
-    ]
-    
-    async_add_entities(entities, True)
+    data: ReminderData = hass.data[DOMAIN][config_entry.entry_id]
+    async_add_entities(
+        [
+            NFCReminderLastScanSensor(data),
+            NFCReminderLastScannedBySensor(data),
+            NFCReminderDaysSinceSensor(data),
+            NFCReminderProgressSensor(data),
+            NFCReminderDaysRemainingSensor(data),
+        ]
+    )
 
 
-class NFCReminderLastScanSensor(SensorEntity):
-    """Sensor showing when the reminder was last scanned."""
+class NFCReminderLastScanSensor(NFCReminderEntity, SensorEntity):
+    _attr_name = "Last Scan"
+    _attr_icon = "mdi:nfc-variant"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
 
-    def __init__(self, hass, config_entry, safe_name, reminder_name):
-        """Initialize the sensor."""
-        self.hass = hass
-        self._config_entry = config_entry
-        self._safe_name = safe_name
-        self._reminder_name = reminder_name
-        self._attr_name = f"{reminder_name} Last Scan"
-        self._attr_unique_id = f"{safe_name}_last_scan_display"
-        self._datetime_entity = f"input_datetime.{safe_name}_last_scan"
-        self._state = None
+    def __init__(self, data: ReminderData) -> None:
+        super().__init__(data, "last_scan")
 
     @property
-    def state(self):
-        """Return the state of the sensor."""
-        datetime_state = self.hass.states.get(self._datetime_entity)
-        if datetime_state and datetime_state.state not in ["unknown", "unavailable"]:
-            try:
-                dt = datetime.fromisoformat(datetime_state.state)
-                return dt.strftime("%B %d, %Y at %I:%M %p")
-            except (ValueError, AttributeError):
-                return "Never scanned"
-        return "Never scanned"
+    def native_value(self) -> datetime | None:
+        return self._data.last_scan
 
     @property
-    def icon(self):
-        """Return the icon."""
-        return "mdi:nfc-variant"
-
-    async def async_added_to_hass(self):
-        """When entity is added to hass."""
-        @callback
-        def sensor_state_listener(event):
-            """Handle state changes."""
-            self.async_schedule_update_ha_state(True)
-
-        async_track_state_change_event(
-            self.hass, [self._datetime_entity], sensor_state_listener
-        )
+    def extra_state_attributes(self) -> dict:
+        return {"scanned_by": self._data.last_scanned_by}
 
 
-class NFCReminderDaysSinceSensor(SensorEntity):
-    """Sensor showing days since last scan."""
+class NFCReminderLastScannedBySensor(NFCReminderEntity, SensorEntity):
+    _attr_name = "Last Scanned By"
+    _attr_icon = "mdi:account-check"
 
-    def __init__(self, hass, config_entry, safe_name, reminder_name):
-        """Initialize the sensor."""
-        self.hass = hass
-        self._config_entry = config_entry
-        self._safe_name = safe_name
-        self._reminder_name = reminder_name
-        self._attr_name = f"{reminder_name} Days Since Scan"
-        self._attr_unique_id = f"{safe_name}_days_since_scan"
-        self._datetime_entity = f"input_datetime.{safe_name}_last_scan"
-        self._attr_unit_of_measurement = "days"
-        self._attr_device_class = "duration"
+    def __init__(self, data: ReminderData) -> None:
+        super().__init__(data, "last_scanned_by")
 
     @property
-    def state(self):
-        """Return the state of the sensor."""
-        datetime_state = self.hass.states.get(self._datetime_entity)
-        if datetime_state and datetime_state.state not in ["unknown", "unavailable"]:
-            try:
-                last_scan = datetime.fromisoformat(datetime_state.state)
-                now = dt_util.now()
-                diff = now - dt_util.as_local(last_scan)
-                return round(diff.total_seconds() / 86400, 1)
-            except (ValueError, AttributeError):
-                return 99
-        return 99
+    def native_value(self) -> str | None:
+        return self._data.last_scanned_by
+
+
+class NFCReminderDaysSinceSensor(NFCReminderEntity, SensorEntity):
+    _attr_name = "Days Since Scan"
+    _attr_icon = "mdi:calendar-clock"
+    _attr_native_unit_of_measurement = UnitOfTime.DAYS
+    _attr_device_class = SensorDeviceClass.DURATION
+
+    def __init__(self, data: ReminderData) -> None:
+        super().__init__(data, "days_since")
 
     @property
-    def icon(self):
-        """Return the icon."""
-        return "mdi:calendar-clock"
-
-    async def async_added_to_hass(self):
-        """When entity is added to hass."""
-        @callback
-        def sensor_state_listener(event):
-            """Handle state changes."""
-            self.async_schedule_update_ha_state(True)
-
-        async_track_state_change_event(
-            self.hass, [self._datetime_entity], sensor_state_listener
-        )
+    def native_value(self) -> float | None:
+        return self._data.days_since
 
 
-class NFCReminderProgressSensor(SensorEntity):
-    """Sensor showing progress percentage toward next reminder."""
+class NFCReminderProgressSensor(NFCReminderEntity, SensorEntity):
+    _attr_name = "Progress"
+    _attr_icon = "mdi:progress-clock"
+    _attr_native_unit_of_measurement = "%"
 
-    def __init__(self, hass, config_entry, safe_name, reminder_name):
-        """Initialize the sensor."""
-        self.hass = hass
-        self._config_entry = config_entry
-        self._safe_name = safe_name
-        self._reminder_name = reminder_name
-        self._attr_name = f"{reminder_name} Progress"
-        self._attr_unique_id = f"{safe_name}_progress"
-        self._datetime_entity = f"input_datetime.{safe_name}_last_scan"
-        self._attr_unit_of_measurement = "%"
+    def __init__(self, data: ReminderData) -> None:
+        super().__init__(data, "progress")
 
     @property
-    def state(self):
-        """Return the state of the sensor."""
-        datetime_state = self.hass.states.get(self._datetime_entity)
-        if datetime_state and datetime_state.state not in ["unknown", "unavailable"]:
-            try:
-                last_scan = datetime.fromisoformat(datetime_state.state)
-                now = dt_util.now()
-                diff = now - dt_util.as_local(last_scan)
-                
-                interval = self._config_entry.data[CONF_INTERVAL]
-                unit = self._config_entry.data[CONF_INTERVAL_UNIT]
-                
-                # Calculate threshold in seconds
-                if unit == "minutes":
-                    threshold = interval * 60
-                elif unit == "hours":
-                    threshold = interval * 3600
-                else:  # days
-                    threshold = interval * 86400
-                
-                percentage = min((diff.total_seconds() / threshold) * 100, 100)
-                return round(percentage)
-            except (ValueError, AttributeError):
-                return 0
-        return 0
+    def native_value(self) -> int:
+        return self._data.progress
 
     @property
-    def icon(self):
-        """Return the icon."""
-        state = self.state
-        if state < 50:
-            return "mdi:check-circle"
-        elif state < 80:
-            return "mdi:alert-circle"
-        else:
-            return "mdi:alert-circle-outline"
+    def extra_state_attributes(self) -> dict:
+        return self._data.attributes
+
+
+class NFCReminderDaysRemainingSensor(NFCReminderEntity, SensorEntity):
+    _attr_name = "Days Remaining"
+    _attr_icon = "mdi:calendar-end"
+    _attr_native_unit_of_measurement = UnitOfTime.DAYS
+    _attr_device_class = SensorDeviceClass.DURATION
+
+    def __init__(self, data: ReminderData) -> None:
+        super().__init__(data, "days_remaining")
 
     @property
-    def extra_state_attributes(self):
-        """Return additional attributes."""
-        state_val = self.state
-        if state_val < 50:
-            status = "good"
-        elif state_val < 80:
-            status = "warning"
-        else:
-            status = "overdue"
-            
-        return {
-            "status": status,
-            "interval": self._config_entry.data[CONF_INTERVAL],
-            "interval_unit": self._config_entry.data[CONF_INTERVAL_UNIT],
-            "nfc_tag_id": self._config_entry.data[CONF_NFC_TAG_ID],
-        }
-
-    async def async_added_to_hass(self):
-        """When entity is added to hass."""
-        @callback
-        def sensor_state_listener(event):
-            """Handle state changes."""
-            self.async_schedule_update_ha_state(True)
-
-        async_track_state_change_event(
-            self.hass, [self._datetime_entity], sensor_state_listener
-        )
+    def native_value(self) -> float | None:
+        return self._data.days_remaining
